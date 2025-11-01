@@ -6,6 +6,7 @@ and exports to CSV format.
 """
 
 import argparse
+import bisect
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -259,9 +260,177 @@ def fetch_treatments(base_url: str, token: str, max_count: int,
     return df
 
 
+def fetch_devicestatus(base_url: str, token: str, max_count: int,
+                       api_from_date: str, api_to_date: Optional[str],
+                       use_local_timezone: bool) -> pd.DataFrame:
+    """Fetch devicestatus from Nightscout API."""
+    print(f"\nFetching devicestatus from Nightscout API (max {max_count} records)...")
+
+    # Build URL
+    url = f"{base_url}/api/v1/devicestatus"
+    params = {
+        "count": max_count,
+        "token": token,
+        "find[created_at][$gte]": api_from_date
+    }
+    if api_to_date:
+        params["find[created_at][$lte]"] = api_to_date
+
+    headers = {"accept": "application/json"}
+
+    try:
+        response = requests.get(url, params=params, headers=headers)
+        response.raise_for_status()
+        devicestatus = response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error: Failed to fetch devicestatus: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not devicestatus:
+        print("Warning: No devicestatus returned from API")
+        return pd.DataFrame()
+
+    # Convert to DataFrame (exports all columns found across all devicestatus records)
+    df = pd.DataFrame(devicestatus)
+
+    # Sort columns alphabetically for consistent ordering
+    df = df.reindex(sorted(df.columns), axis=1)
+
+    # Convert timestamps
+    if 'created_at' in df.columns:
+        df['created_at'] = pd.to_datetime(df['created_at'])
+        if use_local_timezone:
+            df['created_at'] = df['created_at'].apply(
+                lambda x: convert_from_utc(x).strftime("%Y-%m-%d %H:%M:%S")
+            )
+        else:
+            df['created_at'] = df['created_at'].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    print(f"Total devicestatus records: {len(df)}")
+    return df
+
+
+def parse_devicestatus_cob(devicestatus_record) -> Optional[float]:
+    """Parse COB value from devicestatus (Loop structure only).
+
+    Args:
+        devicestatus_record: A single devicestatus record (dict or Series)
+
+    Returns:
+        COB value as float, or None if not found
+    """
+    # Get loop data
+    loop_data = None
+    if isinstance(devicestatus_record, dict):
+        loop_data = devicestatus_record.get('loop')
+    elif hasattr(devicestatus_record, 'get'):
+        loop_data = devicestatus_record.get('loop')
+
+    # Try Loop structure (loop.cob.cob)
+    if loop_data and isinstance(loop_data, dict):
+        cob_obj = loop_data.get('cob')
+        if isinstance(cob_obj, dict):
+            cob_value = cob_obj.get('cob')
+            if cob_value is not None:
+                return float(cob_value)
+
+    return None
+
+
+def match_devicestatus_to_timestamps(combined_df: pd.DataFrame, devicestatus_df: pd.DataFrame,
+                                     max_time_diff_minutes: int = 5) -> tuple:
+    """Match devicestatus IOB/COB to combined data timestamps.
+
+    Finds the nearest devicestatus entry within ±max_time_diff_minutes for each timestamp.
+    When multiple devicestatus entries exist at the same time, uses the most recent one.
+
+    Args:
+        combined_df: Combined data DataFrame with DateTime column
+        devicestatus_df: Devicestatus DataFrame with created_at column
+        max_time_diff_minutes: Maximum time difference in minutes for matching
+
+    Returns:
+        tuple: (iob_values, cob_values) - lists matching combined_df rows
+    """
+    iob_values = []
+    cob_values = []
+
+    if devicestatus_df.empty or 'created_at' not in devicestatus_df.columns:
+        # No devicestatus data, return None for all rows
+        return [None] * len(combined_df), [None] * len(combined_df)
+
+    # Parse devicestatus timestamps and build lookup list
+    devicestatus_times = []
+    for _, record in devicestatus_df.iterrows():
+        timestamp = datetime.strptime(record['created_at'], "%Y-%m-%d %H:%M:%S")
+        devicestatus_times.append((timestamp, record))
+
+    # Sort by timestamp (and keep most recent if duplicates by using stable sort)
+    devicestatus_times.sort(key=lambda x: x[0])
+
+    # Build timestamp list for binary search
+    timestamps = [t[0] for t in devicestatus_times]
+
+    max_diff = timedelta(minutes=max_time_diff_minutes)
+
+    # Match each combined row to nearest devicestatus
+    for _, row in combined_df.iterrows():
+        current_time = row['DateTime']
+
+        # Find insertion point
+        idx = bisect.bisect_left(timestamps, current_time)
+
+        # Check candidates: idx-1 and idx
+        candidates = []
+        if idx > 0:
+            candidates.append((idx - 1, timestamps[idx - 1]))
+        if idx < len(timestamps):
+            candidates.append((idx, timestamps[idx]))
+
+        # Find closest within time window
+        best_match = None
+        best_diff = max_diff
+
+        for cand_idx, cand_time in candidates:
+            time_diff = abs(current_time - cand_time)
+            if time_diff <= max_diff and time_diff <= best_diff:
+                best_diff = time_diff
+                best_match = cand_idx
+
+        if best_match is not None:
+            _, record = devicestatus_times[best_match]
+
+            # Extract IOB (Loop structure only)
+            iob = None
+
+            # Try Loop structure (loop.iob.iob)
+            if 'loop' in record:
+                loop_data = record.get('loop')
+                if isinstance(loop_data, dict):
+                    iob_obj = loop_data.get('iob')
+                    if isinstance(iob_obj, dict):
+                        iob_value = iob_obj.get('iob')
+                        if iob_value is not None:
+                            iob = float(iob_value)
+
+            # Extract COB using parser (Loop structure only)
+            cob = parse_devicestatus_cob(record)
+
+            iob_values.append(iob)
+            cob_values.append(cob)
+        else:
+            iob_values.append(None)
+            cob_values.append(None)
+
+    return iob_values, cob_values
+
+
 def process_combined_data(entries_df: pd.DataFrame, treatments_df: pd.DataFrame,
-                          from_datetime: datetime, to_datetime: Optional[datetime]) -> pd.DataFrame:
-    """Process and combine entries and treatments into unified format."""
+                          from_datetime: datetime, to_datetime: Optional[datetime],
+                          devicestatus_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Process and combine entries and treatments into unified format.
+
+    Optionally adds IOB/COB from devicestatus (loop system values)."""
     print("\nProcessing and combining datasets...")
 
     processed_entries = []
@@ -311,6 +480,24 @@ def process_combined_data(entries_df: pd.DataFrame, treatments_df: pd.DataFrame,
     df = pd.DataFrame(combined_data)
     df['DateTime'] = pd.to_datetime(df['DateTime'])
     df = df.sort_values('DateTime')
+
+    # Match devicestatus IOB/COB (from loop system)
+    if devicestatus_df is not None and not devicestatus_df.empty:
+        print("Matching devicestatus IOB/COB to timestamps...")
+        iob_from_devicestatus, cob_from_devicestatus = match_devicestatus_to_timestamps(df, devicestatus_df)
+        df['iob'] = iob_from_devicestatus
+        df['cob'] = cob_from_devicestatus
+
+        # Calculate match rate
+        iob_match_count = sum(1 for v in iob_from_devicestatus if v is not None)
+        cob_match_count = sum(1 for v in cob_from_devicestatus if v is not None)
+        print(f"  IOB matched: {iob_match_count}/{len(df)} ({iob_match_count*100//len(df) if len(df) > 0 else 0}%)")
+        print(f"  COB matched: {cob_match_count}/{len(df)} ({cob_match_count*100//len(df) if len(df) > 0 else 0}%)")
+    else:
+        df['iob'] = None
+        df['cob'] = None
+
+    # Convert DateTime back to string
     df['DateTime'] = df['DateTime'].dt.strftime("%Y-%m-%d %H:%M:%S")
 
     return df
@@ -400,9 +587,21 @@ def main():
         treatments_df_sorted.to_csv(treatments_file, index=False)
         print(f"Treatments exported to: {treatments_file}")
 
+    # Fetch devicestatus
+    devicestatus_df = fetch_devicestatus(base_url, token, args.max_count, api_from_date, api_to_date,
+                                         args.use_local_timezone)
+
+    # Save devicestatus to CSV
+    if not devicestatus_df.empty:
+        devicestatus_file = output_folder / f"{date_range_suffix}-devicestatus.csv"
+        devicestatus_df_sorted = devicestatus_df.sort_values('created_at') if 'created_at' in devicestatus_df.columns else devicestatus_df
+        devicestatus_df_sorted.to_csv(devicestatus_file, index=False)
+        print(f"Devicestatus exported to: {devicestatus_file}")
+
     # Process and combine data
     combined_df = process_combined_data(entries_df, treatments_df, from_datetime,
-                                        to_datetime if to_datetime else datetime.max)
+                                        to_datetime if to_datetime else datetime.max,
+                                        devicestatus_df)
 
     # Save combined data to CSV
     if not combined_df.empty:

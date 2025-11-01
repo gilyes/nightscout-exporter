@@ -4,13 +4,12 @@ A Python tool for exporting glucose monitoring data (CGM entries and treatments)
 
 ## Features
 
-- Fetches CGM (Continuous Glucose Monitor) entries and treatment data from Nightscout
-- Converts glucose values from mg/dL to mmol/L (enabled by default, configurable)
-- Works in local timezone by default (automatically handles UTC conversion)
+- Fetches CGM entries, treatment and device status data from Nightscout
 - Exports data in multiple formats:
   - Raw entries CSV (with converted values)
   - Raw treatments CSV (normalized columns)
-  - Combined and processed CSV with unified schema
+  - Raw devicestatus CSV
+  - Combined and processed CSV with unified schema including IOB/COB. **Note:** For IOB/COB, only Loop data is supported at this time.
 - Configurable date ranges and record limits
 
 ## Prerequisites
@@ -18,7 +17,6 @@ A Python tool for exporting glucose monitoring data (CGM entries and treatments)
 - **Python 3.11 or higher**
 - Access to a Nightscout instance
 - Nightscout API token
-
 
 ## Installation
 
@@ -40,65 +38,6 @@ NIGHTSCOUT_TOKEN=your-token-here
 ```
 
 Reference `.env.sample` for the expected format.
-
-## Development Setup
-
-It's recommended to use a virtual environment to isolate project dependencies:
-
-### Windows (PowerShell)
-
-```powershell
-# Create virtual environment
-python -m venv .venv
-
-# Activate virtual environment
-.\.venv\Scripts\Activate.ps1
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Windows (Command Prompt)
-
-```cmd
-# Create virtual environment
-python -m venv .venv
-
-# Activate virtual environment
-.venv\Scripts\activate.bat
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Linux/macOS
-
-```bash
-# Create virtual environment
-python3 -m venv .venv
-
-# Activate virtual environment
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Working with the Virtual Environment
-
-Once activated, your terminal prompt will show `(.venv)` indicating the virtual environment is active:
-
-```bash
-(.venv) $ python export_nightscout_data.py
-```
-
-To deactivate the virtual environment when done:
-
-```bash
-deactivate
-```
-
-**Note:** The `.venv/` folder is already excluded from version control via `.gitignore`.
 
 ## Usage
 
@@ -177,13 +116,14 @@ python export_nightscout_data.py --from-date "2024-06-01" --to-date "2024-06-30"
 
 ## Output Files
 
-The script creates an output folder (default: `Output/`) with three CSV files named with the date range:
+The script creates an output folder (default: `Output/`) with four CSV files named with the date range:
 
 File naming format: `yyyyMMdd-yyyyMMdd-<type>.csv`
 
 For example, if you export data from 2024-01-01 to 2024-12-31, the files will be:
 - `20240101-20241231-entries.csv`
 - `20240101-20241231-treatments.csv`
+- `20240101-20241231-devicestatus.csv`
 - `20240101-20241231-combined.csv`
 
 If no end date is specified, the current date is used:
@@ -194,24 +134,31 @@ If no end date is specified, the current date is used:
 1. **yyyyMMdd-yyyyMMdd-entries.csv**
    - Raw CGM entries from the Nightscout API
    - Contains sensor glucose values and timestamps
-   - Glucose values converted to mmol/L by default (set `-ConvertToMmol $false` to keep mg/dL)
+   - Glucose values converted to mmol/L by default (set `--convert-to-mmol false` to keep mg/dL)
 
 2. **yyyyMMdd-yyyyMMdd-treatments.csv**
    - Raw treatments from the Nightscout API
    - Contains insulin, carbs, and other treatment data
    - Normalized to include both `insulin` and `amount` columns
 
-3. **yyyyMMdd-yyyyMMdd-combined.csv**
+3. **yyyyMMdd-yyyyMMdd-devicestatus.csv**
+   - Raw devicestatus records from the Nightscout API
+   - Contains Loop system data with full structure
+   - Includes IOB and COB data from the Loop system
+
+4. **yyyyMMdd-yyyyMMdd-combined.csv**
    - Processed and merged dataset with unified schema
    - Glucose values converted to mmol/L by default
    - Timestamps in local timezone by default
+   - Includes IOB/COB data matched from devicestatus (Loop only)
    - Sorted by DateTime
-   - Columns: DateTime, eventType, sgv, insulin, amount, carbs
+   - Columns: DateTime, eventType, sgv, insulin, amount, carbs, iob, cob
 
 ## Data Transformations
 
-- **Glucose Units**: SGV values are converted from mg/dL to mmol/L (÷ 18.0182) by default. Set `-ConvertToMmol $false` to keep mg/dL values.
-- **Timezone**: When `UseLocalTimezone` is `$true` (default), input dates are treated as local time and converted to UTC for API queries, then response timestamps are converted back to local time for output. Set to `$false` to work entirely in UTC.
+- **Glucose Units**: SGV values are converted from mg/dL to mmol/L (÷ 18.0182) by default. Set `--convert-to-mmol false` to keep mg/dL values.
+- **Timezone**: When `--use-local-timezone` is `true` (default), input dates are treated as local time and converted to UTC for API queries, then response timestamps are converted back to local time for output. Set to `false` to work entirely in UTC.
+- **IOB/COB Matching**: Devicestatus IOB/COB values are matched to timestamps within ±5 minutes. Only Loop system data is supported.
 - **Schema**: Combined CSV uses unified columns for easy analysis
 - **Date Filtering**: Applied both at API level and post-processing after timezone conversion
 
