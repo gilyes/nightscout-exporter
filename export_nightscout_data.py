@@ -9,6 +9,7 @@ import argparse
 import bisect
 import os
 import sys
+import tomllib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -22,6 +23,27 @@ from dotenv import load_dotenv
 def get_local_timezone():
     """Get the local timezone in a cross-platform way."""
     return datetime.now().astimezone().tzinfo
+
+
+def load_config() -> dict:
+    """Load configuration from config.toml file if it exists.
+
+    Returns:
+        dict: Configuration dictionary with 'defaults' section, or empty dict if no config file
+    """
+    config_path = Path(__file__).parent / "config.toml"
+
+    if not config_path.exists():
+        return {}
+
+    try:
+        with open(config_path, "rb") as f:
+            config = tomllib.load(f)
+        return config
+    except (tomllib.TOMLDecodeError, OSError) as e:
+        print(f"Warning: Failed to load config.toml: {e}", file=sys.stderr)
+        print("Continuing with default settings...", file=sys.stderr)
+        return {}
 
 
 def load_environment() -> tuple[str, str]:
@@ -43,8 +65,19 @@ def load_environment() -> tuple[str, str]:
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
-    # Default from_date is one month ago (calendar month, not 30 days)
-    default_from_date = (datetime.now() - relativedelta(months=1)).strftime("%Y-%m-%d")
+    # Load config file
+    config = load_config()
+    config_defaults = config.get('defaults', {})
+
+    # Get lookback days from config, default to 30 days
+    lookback_days = config_defaults.get('lookback_days', 30)
+    default_from_date = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+
+    # Get other defaults from config
+    default_max_count = config_defaults.get('max_count', 100000)
+    default_use_local_timezone = config_defaults.get('use_local_timezone', True)
+    default_convert_to_mmol = config_defaults.get('convert_to_mmol', True)
+    default_output_folder = config_defaults.get('output_folder', './Output')
 
     parser = argparse.ArgumentParser(
         description="Export Nightscout data (CGM entries and treatments) to CSV format."
@@ -53,7 +86,7 @@ def parse_arguments() -> argparse.Namespace:
         "--from-date",
         type=str,
         default=default_from_date,
-        help="Start date in YYYY-MM-DD format (default: one month ago)"
+        help=f"Start date in YYYY-MM-DD format (default: {lookback_days} days ago)"
     )
     parser.add_argument(
         "--to-date",
@@ -64,26 +97,26 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--max-count",
         type=int,
-        default=100000,
-        help="Maximum number of records to fetch per API call (default: 100000)"
+        default=default_max_count,
+        help=f"Maximum number of records to fetch per API call (default: {default_max_count})"
     )
     parser.add_argument(
         "--use-local-timezone",
         type=lambda x: x.lower() in ('true', '1', 'yes'),
-        default=True,
-        help="Convert input dates and output timestamps to/from local timezone (default: True)"
+        default=default_use_local_timezone,
+        help=f"Convert input dates and output timestamps to/from local timezone (default: {default_use_local_timezone})"
     )
     parser.add_argument(
         "--convert-to-mmol",
         type=lambda x: x.lower() in ('true', '1', 'yes'),
-        default=True,
-        help="Convert glucose values from mg/dL to mmol/L (default: True)"
+        default=default_convert_to_mmol,
+        help=f"Convert glucose values from mg/dL to mmol/L (default: {default_convert_to_mmol})"
     )
     parser.add_argument(
         "--output-folder",
         type=str,
-        default="./Output",
-        help="Output folder path, relative or absolute (default: ./Output)"
+        default=default_output_folder,
+        help=f"Output folder path, relative or absolute (default: {default_output_folder})"
     )
 
     return parser.parse_args()

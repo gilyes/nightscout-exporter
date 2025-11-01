@@ -39,11 +39,35 @@ NIGHTSCOUT_TOKEN=your-token-here
 
 Reference `.env.sample` for the expected format.
 
+## Configuration
+
+The script includes a `config.toml` file with sensible defaults. You can customize these values directly:
+
+```toml
+[defaults]
+lookback_days = 30              # Number of days to fetch by default
+max_count = 100000
+use_local_timezone = true
+convert_to_mmol = true
+output_folder = "./Output"
+```
+
+### Configuration Priority
+
+Settings are applied in this order (highest to lowest priority):
+1. **Command-line arguments** - Explicitly passed flags override everything
+2. **config.toml file** - Configured defaults (tracked in git)
+3. **Hardcoded defaults** - Fallback if config.toml is missing
+
+**Example:** If `config.toml` sets `lookback_days = 90` but you run with `--from-date "2024-01-01"`, the CLI argument takes precedence.
+
+**Note:** The config.toml contains no sensitive data - credentials remain in `.env` file.
+
 ## Usage
 
 ### Basic Usage
 
-Fetch the last month of data (default):
+Fetch data from the default lookback period (30 days unless configured otherwise):
 
 ```bash
 python export_nightscout_data.py

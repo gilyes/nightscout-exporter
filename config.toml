@@ -1,0 +1,36 @@
+# Nightscout Exporter Configuration
+# This is a sample configuration file. Copy this to 'config.toml' and customize as needed.
+# All settings are optional - if not specified, the script will use hardcoded defaults.
+# Command-line arguments will override these settings.
+
+[defaults]
+# Number of days to look back from today when fetching data
+# Default: 30 days
+# Can be overridden with --from-date CLI argument
+lookback_days = 10
+
+# Maximum number of records to fetch per API call
+# Default: 100000
+# Can be overridden with --max-count CLI argument
+max_count = 100000
+
+# Convert input dates and output timestamps to/from local timezone
+# When true: dates are treated as local time and converted to UTC for API calls,
+#            then response timestamps are converted back to local time
+# When false: all dates and times remain in UTC
+# Default: true
+# Can be overridden with --use-local-timezone CLI argument
+use_local_timezone = true
+
+# Convert glucose values from mg/dL to mmol/L
+# When true: SGV values are divided by 18.0182 for mmol/L
+# When false: SGV values remain in mg/dL
+# Default: true
+# Can be overridden with --convert-to-mmol CLI argument
+convert_to_mmol = true
+
+# Output folder path (relative or absolute)
+# Relative paths are resolved from the script directory
+# Default: "./Output"
+# Can be overridden with --output-folder CLI argument
+output_folder = "./Output"
