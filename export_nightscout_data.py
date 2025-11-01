@@ -536,6 +536,31 @@ def process_combined_data(entries_df: pd.DataFrame, treatments_df: pd.DataFrame,
     return df
 
 
+def safe_csv_export(df: pd.DataFrame, file_path: Path, description: str) -> bool:
+    """Safely export DataFrame to CSV with user-friendly error handling.
+
+    Args:
+        df: DataFrame to export
+        file_path: Path to the CSV file
+        description: Description of the file for error messages (e.g., "Entries", "Combined data")
+
+    Returns:
+        bool: True if successful, False if failed
+    """
+    try:
+        df.to_csv(file_path, index=False)
+        print(f"{description} exported to: {file_path}")
+        return True
+    except PermissionError:
+        print(f"\nError: Cannot write to {file_path}", file=sys.stderr)
+        print(f"The file may be open in another program (e.g., Excel).", file=sys.stderr)
+        print(f"Please close the file and try again.", file=sys.stderr)
+        return False
+    except OSError as e:
+        print(f"\nError: Failed to write {file_path}: {e}", file=sys.stderr)
+        return False
+
+
 def main():
     """Main execution function."""
     # Parse arguments
@@ -606,8 +631,8 @@ def main():
     if not entries_df.empty:
         entries_file = output_folder / f"{date_range_suffix}-entries.csv"
         entries_df_sorted = entries_df.sort_values('dateString') if 'dateString' in entries_df.columns else entries_df
-        entries_df_sorted.to_csv(entries_file, index=False)
-        print(f"Entries exported to: {entries_file}")
+        if not safe_csv_export(entries_df_sorted, entries_file, "Entries"):
+            sys.exit(1)
 
     # Fetch treatments
     treatments_df = fetch_treatments(base_url, token, args.max_count, api_from_date, api_to_date,
@@ -617,8 +642,8 @@ def main():
     if not treatments_df.empty:
         treatments_file = output_folder / f"{date_range_suffix}-treatments.csv"
         treatments_df_sorted = treatments_df.sort_values('created_at') if 'created_at' in treatments_df.columns else treatments_df
-        treatments_df_sorted.to_csv(treatments_file, index=False)
-        print(f"Treatments exported to: {treatments_file}")
+        if not safe_csv_export(treatments_df_sorted, treatments_file, "Treatments"):
+            sys.exit(1)
 
     # Fetch devicestatus
     devicestatus_df = fetch_devicestatus(base_url, token, args.max_count, api_from_date, api_to_date,
@@ -628,8 +653,8 @@ def main():
     if not devicestatus_df.empty:
         devicestatus_file = output_folder / f"{date_range_suffix}-devicestatus.csv"
         devicestatus_df_sorted = devicestatus_df.sort_values('created_at') if 'created_at' in devicestatus_df.columns else devicestatus_df
-        devicestatus_df_sorted.to_csv(devicestatus_file, index=False)
-        print(f"Devicestatus exported to: {devicestatus_file}")
+        if not safe_csv_export(devicestatus_df_sorted, devicestatus_file, "Devicestatus"):
+            sys.exit(1)
 
     # Process and combine data
     combined_df = process_combined_data(entries_df, treatments_df, from_datetime,
@@ -639,9 +664,10 @@ def main():
     # Save combined data to CSV
     if not combined_df.empty:
         combined_file = output_folder / f"{date_range_suffix}-combined.csv"
-        combined_df.to_csv(combined_file, index=False)
+        print()  # Blank line before combined output
+        if not safe_csv_export(combined_df, combined_file, "Combined data"):
+            sys.exit(1)
 
-        print(f"\nCombined data exported to: {combined_file}")
         print(f"Total SGV entries: {len(combined_df[combined_df['eventType'] == 'SGV'])}")
         print(f"Total treatments: {len(combined_df[combined_df['eventType'] != 'SGV'])}")
         print(f"Total combined records: {len(combined_df)}")

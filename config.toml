@@ -7,7 +7,7 @@
 # Number of days to look back from today when fetching data
 # Default: 30 days
 # Can be overridden with --from-date CLI argument
-lookback_days = 10
+lookback_days = 30
 
 # Maximum number of records to fetch per API call
 # Default: 100000
