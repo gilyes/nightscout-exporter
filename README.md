@@ -1,6 +1,6 @@
 # Nightscout Data Exporter
 
-A PowerShell tool for exporting glucose monitoring data (CGM entries and treatments) from Nightscout API to CSV format.
+A Python tool for exporting glucose monitoring data (CGM entries and treatments) from Nightscout API to CSV format.
 
 ## Features
 
@@ -15,9 +15,7 @@ A PowerShell tool for exporting glucose monitoring data (CGM entries and treatme
 
 ## Prerequisites
 
-- **Windows**: PowerShell 5.1 or higher (pre-installed on Windows 10/11)
-- **Linux**: PowerShell 7+ ([install guide](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-linux))
-- **macOS**: PowerShell 7+ ([install guide](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-macos))
+- **Python 3.11 or higher**
 - Access to a Nightscout instance
 - Nightscout API token
 
@@ -30,7 +28,12 @@ git clone https://github.com/gilyes/nightscout-exporter.git
 cd nightscout-exporter
 ```
 
-2. Create a `.env` file in the root directory with your Nightscout credentials:
+2. Install Python dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Create a `.env` file in the root directory with your Nightscout credentials:
 ```
 NIGHTSCOUT_URL=https://your-nightscout-url.com
 NIGHTSCOUT_TOKEN=your-token-here
@@ -38,80 +41,139 @@ NIGHTSCOUT_TOKEN=your-token-here
 
 Reference `.env.sample` for the expected format.
 
+## Development Setup
+
+It's recommended to use a virtual environment to isolate project dependencies:
+
+### Windows (PowerShell)
+
+```powershell
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment
+.\.venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Windows (Command Prompt)
+
+```cmd
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment
+.venv\Scripts\activate.bat
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Linux/macOS
+
+```bash
+# Create virtual environment
+python3 -m venv .venv
+
+# Activate virtual environment
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Working with the Virtual Environment
+
+Once activated, your terminal prompt will show `(.venv)` indicating the virtual environment is active:
+
+```bash
+(.venv) $ python export_nightscout_data.py
+```
+
+To deactivate the virtual environment when done:
+
+```bash
+deactivate
+```
+
+**Note:** The `.venv/` folder is already excluded from version control via `.gitignore`.
+
 ## Usage
 
 ### Basic Usage
 
 Fetch the last month of data (default):
 
-```powershell
-.\Export-NightscoutData.ps1
+```bash
+python export_nightscout_data.py
 ```
 
 ### Glucose Unit Conversion
 
 **By default, glucose values are converted from mg/dL to mmol/L.** To keep original mg/dL values:
 
-```powershell
+```bash
 # Keep original mg/dL values
-.\Export-NightscoutData.ps1 -ConvertToMmol $false
+python export_nightscout_data.py --convert-to-mmol false
 
 # Convert to mmol/L (default)
-.\Export-NightscoutData.ps1
+python export_nightscout_data.py
 ```
 
 ### Custom Date Range
 
 Specify custom date range (dates are in your local timezone by default):
 
-```powershell
-.\Export-NightscoutData.ps1 -FromDate "2024-01-01" -ToDate "2024-12-31"
+```bash
+python export_nightscout_data.py --from-date "2024-01-01" --to-date "2024-12-31"
 ```
 
 ### Working with UTC Instead of Local Timezone
 
 By default, input dates and output timestamps use your local timezone. To work entirely in UTC:
 
-```powershell
-.\Export-NightscoutData.ps1 -UseLocalTimezone $false
+```bash
+python export_nightscout_data.py --use-local-timezone false
 ```
 
 ### Custom Maximum Record Count
 
 Limit the number of records fetched:
 
-```powershell
-.\Export-NightscoutData.ps1 -MaxCount 50000
+```bash
+python export_nightscout_data.py --max-count 50000
 ```
 
 ### Custom Output Folder
 
-Specify a custom output folder (defaults to `.\Output`):
+Specify a custom output folder (defaults to `./Output`):
 
-```powershell
+```bash
 # Use custom output folder (relative path)
-.\Export-NightscoutData.ps1 -OutputFolder ".\MyData"
+python export_nightscout_data.py --output-folder "./MyData"
 
 # Use absolute path
-.\Export-NightscoutData.ps1 -OutputFolder "C:\Data\Nightscout"
+python export_nightscout_data.py --output-folder "C:/Data/Nightscout"
 ```
 
 ### Combined Parameters
 
-```powershell
-.\Export-NightscoutData.ps1 -FromDate "2024-06-01" -ToDate "2024-06-30" -MaxCount 20000 -ConvertToMmol $false -OutputFolder ".\June2024"
+```bash
+python export_nightscout_data.py --from-date "2024-06-01" --to-date "2024-06-30" --max-count 20000 --convert-to-mmol false --output-folder "./June2024"
 ```
 
 ## Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `FromDate` | string | Last month | Start date in yyyy-MM-dd format (local timezone by default) |
-| `ToDate` | string | null | End date in yyyy-MM-dd format (optional) |
-| `MaxCount` | int | 100000 | Maximum number of records to fetch |
-| `ConvertToMmol` | bool | **true** | **Convert glucose values from mg/dL to mmol/L** |
-| `UseLocalTimezone` | bool | true | Work in local timezone (input dates and output timestamps) |
-| `OutputFolder` | string | .\Output | Output folder path (relative or absolute) |
+| `--from-date` | string | Last month | Start date in YYYY-MM-DD format (local timezone by default) |
+| `--to-date` | string | None | End date in YYYY-MM-DD format (optional) |
+| `--max-count` | int | 100000 | Maximum number of records to fetch |
+| `--convert-to-mmol` | bool | **true** | **Convert glucose values from mg/dL to mmol/L** |
+| `--use-local-timezone` | bool | true | Work in local timezone (input dates and output timestamps) |
+| `--output-folder` | string | ./Output | Output folder path (relative or absolute) |
 
 ## Output Files
 
