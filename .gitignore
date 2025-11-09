@@ -1,9 +1,10 @@
 .env
-Output/
+output/
+documents/work/
+analysis/output/
 .analysis/
 .claude/
 CLAUDE.md
-documents/work/
 
 # Python
 __pycache__/
@@ -30,3 +31,9 @@ wheels/
 venv/
 ENV/
 env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
